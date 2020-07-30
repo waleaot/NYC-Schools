@@ -1,0 +1,187 @@
+---
+title: 'Guided Project: NYC Schools Perception'
+author: "Olawale Adeniyi"
+date: "June 2020"
+
+---
+
+This is a project from dataquest.io in which the task is to analyse NYC Schools Perception dataset gotten from https://data.cityofnewyork.us (2011_school_survey).                                                                                                                                                   
+
+
+Objectives:
+  The objectives of the analysis is as follows:
+   i.)Determine whether perceptions of NYC school quality appears to be related to demography and academics metrics? 
+   ii.)Do students, teachers, and parents have similar perceptions of NYC school quality based on the metrics[Safety,             Communication, Engagement and Academic Expectations]?
+  
+  
+  
+  The survey questions access the following metrics:
+  Safety, Communication, Engagement and Academic Expectations. 
+  
+  The following groups responded to the survey:
+  Parents, Teachers and Students resulting in a Total(Average of Parent, Teacher, Student scores )
+
+
+```{r}
+#load necessary packages needed for the analysis
+
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+```
+```{r}
+#load the data into R
+# the data are in 2 separate files
+
+survey_data_1 <- read_tsv("masterfile11_d75_final.txt")
+survey_data_2 <- read_tsv("masterfile11_gened_final.txt")
+```
+```{r}
+View(survey_data_1)
+View(survey_data_2)
+```
+
+```{r}
+#selecting variables of interest
+
+survey_data_one <- survey_data_1 %>%
+  select(dbn,schoolname,highschool,rr_s,rr_p,rr_t,nr_s,nr_t,nr_p,saf_p_11,saf_s_11,saf_t_11,com_p_11,com_s_11,com_s_11,eng_p_11,eng_t_11,eng_s_11,aca_p_11,aca_s_11,aca_t_11)
+
+survey_data_two <- survey_data_2 %>% 
+  select(dbn,schoolname,schooltype,rr_s,rr_t,rr_p,com_p_11,com_t_11,com_s_11,aca_p_11,aca_t_11,aca_s_11,eng_p_11,eng_t_11,eng_s_11,saf_p_11,saf_t_11,saf_s_11) %>%
+  #The analysis is considering high schools only
+  filter(schooltype == "High School")
+
+```
+```{r}
+View(survey_data_one)
+View(survey_data_two)
+```
+
+```{r}
+#combine the two data frame - survey_data_(one & two)
+#importing a previous data frame named combine
+#this dataset has some variables of interest needed to complete this analysis
+
+combined <- read_csv("combined.csv")
+ 
+combined <- combined %>% 
+   rename(Black_Student = black_per, White_Student = white_per, Hispanic_student = hispanic_per , Asian_student = asian_per )
+
+survey_data <-  bind_rows(survey_data_one,survey_data_two)
+
+#do away with some redundant variables
+#also ensure my key (DBN) is of the same format in the 2 dataset(combined,survey_data)
+survey_data <-  survey_data %>%
+    select(-nr_p,-nr_s,-nr_t,-rr_p,-rr_s,-rr_t) %>%
+  rename(DBN = dbn)
+
+View(survey_data)
+```
+
+
+```{r}
+#join the 2 datasets together i.e combined and survey_data
+#initiate left_join()
+
+combined_survey <- combined %>% 
+  left_join(survey_data,by = "DBN") 
+  
+#left join was used because most of the questions to be answered are from the 'combined' dataset. 
+
+ 
+View(combined_survey)
+```
+
+```{r}
+#question 1
+# Do student, teacher and parent perceptions of NYC school quality appears to be related to demography and academics metrics? 
+
+#create a correlation matrix for variables that answers the question above
+cor_matrix <-  combined_survey %>% 
+    select(avg_sat_score,Asian_student,White_Student,Hispanic_student,Black_Student) %>%
+    drop_na() %>%
+    cor(use="pairwise.complete.obs")
+
+#change the matrix to a tibble
+cor_tibble <- cor_matrix %>%
+   as.tibble(rownames = "Metrics")
+
+#select variables that suggests interesting relationship
+
+cor_tibble_significant <-  cor_tibble %>%
+   select(Metrics,avg_sat_score)%>%
+   filter(avg_sat_score > 0.25 | avg_sat_score < -0.25 )
+
+View(cor_tibble_significant)
+```
+
+```{r}
+#visualize this relationships
+
+plot_visual <-  function(x, y){
+  ggplot(data = combined_survey) + aes_string(x=x,y=y) + geom_point(alpha = 0.3)
+}
+
+y_var= names(combined_survey)[7]
+x_var= cor_tibble_significant$Metrics[2:5]
+
+
+map2(x_var, y_var, plot_visual)
+```
+
+Discussion of the scatter plot:
+
+From the chart, The relationship betweeen Average SAT scores and c(Asian student,White student) appears to be  a moderately positive correlation while the correlation  between the other two sets of students C(black student, Hispanic student) suggests a weak negative correlation.
+
+There appears to be a demographic perception in relation to acedemics metrics.
+
+```{r}
+#Next will be to investigate the metrics used in this survey- Safety,Communication,Engagement,Academic Expectations. 
+#Reshape the dataframe and add two new columns- response_type & metric
+
+combined_survey_gather <- combined_survey %>% 
+  pivot_longer(cols=c(33:43,45),names_to = "Survey_Question", values_to="scores")
+
+combined_survey_gather <- combined_survey_gather %>% 
+  mutate(response_type = str_sub(Survey_Question,4,6)) %>% 
+  mutate( Metric = str_sub(Survey_Question,1,3))
+
+#replace the "response type" variable values with "parents","Student","teacher"
+
+combined_survey_gather <- combined_survey_gather %>% 
+  mutate(response_type = ifelse(response_type == "_p_","parent",
+                                ifelse(response_type == "_t_", "teacher",
+                                ifelse(response_type == "_s_","student",
+                                ifelse(response_type == "to","total","NA"))))) 
+#View(combined_survey_gather)
+```
+
+```{r}
+#Visualize the responses 
+
+combined_survey_gather %>% 
+  filter(response_type != "total") %>% 
+  ggplot() + 
+  aes(x= Metric , y = scores, fill=response_type) + geom_boxplot()
+```
+Interpretation: From the chart:
+Safety : The average Parents' perspective on safety is a little higher than that of the teachers' with the students' 
+             coming last. The average  safety scale as indicated here lies between 7 and 8. 
+
+Communication: The average parents' believe communication in the schools examined is satisfactory.The average                              teachers' perception tends to be lower than the parents', while the students believe the                                  communication bar could be improved on. The average  safety scale as indicated here lies between 6                         and 8.
+    
+Engagement:  The Engagement level seem satisfactory with the parents', its average rating is considered lower on the                    teachers' side, while the students' gave it the least average rating. The average engagement scale as                     indicated here lies between 6.5 and 8. 
+
+Academic Expectations: The average parents academic expectation is rated higer than the teachers' and students'. The                    average academic expectation scale as indicated here lies between 6 and 9.
+
+Left for the parents, the school is doing well. The average ratings are (7.8,7.7, 7.6 and 8.3) out of a 10 rating scale.
+For the teachers we have (7.6,6.5,7.0,7.2)
+while the students (7.3,6.0.6.7,6.7).
+
+What this means is the perceptions of the schools by the parents, teachers and students are distinct and somehow related. 
+conclusively, the parents rating is > teachers  rating and Teachers' rating > students' rating. 
